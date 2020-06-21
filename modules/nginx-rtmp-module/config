@@ -43,6 +43,7 @@ RTMP_HTTP_MODULES="                                         \
 
 
 RTMP_DEPS="                                                     \
+                $ngx_addon_dir/ngx_kafka_client.h               \
                 $ngx_addon_dir/ngx_netcall.h                    \
                 $ngx_addon_dir/ngx_rtmp_amf.h                   \
                 $ngx_addon_dir/ngx_rtmp_bandwidth.h             \
@@ -73,6 +74,7 @@ RTMP_DEPS="                                                     \
 
 
 RTMP_CORE_SRCS="                                                \
+                $ngx_addon_dir/ngx_kafka_client.c               \
                 $ngx_addon_dir/ngx_netcall.c                    \
                 $ngx_addon_dir/ngx_rtmp.c                       \
                 $ngx_addon_dir/ngx_rtmp_init.c                  \
@@ -148,7 +150,8 @@ if [ -f auto/module ] ; then
 
         ngx_module_type=HTTP
         ngx_module_name=$RTMP_HTTP_MODULES
-        ngx_module_incs="$ngx_addon_dir $ngx_addon_dir/http $ngx_addon_dir/hls $ngx_addon_dir/mpegts"
+        ngx_module_incs="$ngx_addon_dir $ngx_addon_dir/http $ngx_addon_dir/hls $ngx_addon_dir/mpegts /usr/local/include/librdkafka /usr/include/glib-2.0 /usr/lib/x86_64-linux-gnu/glib-2.0/include"
+        ngx_module_libs="-lrdkafka `pkg-config --libs glib-2.0`"
         ngx_module_deps=
         ngx_module_srcs=$RTMP_HTTP_SRCS
 

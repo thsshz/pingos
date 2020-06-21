@@ -5,10 +5,13 @@
 
 #include <ngx_config.h>
 #include <ngx_core.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "ngx_rtmp.h"
 #include "ngx_rtmp_cmd_module.h"
 #include "ngx_rtmp_codec_module.h"
 #include "ngx_live_record.h"
+#include "ngx_kafka_client.h"
 
 
 ngx_live_record_start_pt            ngx_live_record_start;
@@ -30,7 +33,7 @@ static char * ngx_live_record_merge_app_conf(ngx_conf_t *cf,
 
 
 #define NGX_LIVE_RECORD_BUFSIZE     (10*1024*1024)
-
+#define CFG_FILE "./cfg_kafka.txt"
 
 typedef struct {
     ngx_flag_t                      record;
@@ -141,6 +144,14 @@ ngx_live_record_create_app_conf(ngx_conf_t *cf)
 }
 
 
+void sample_msgapi_connect_cb(NvDsMsgApiHandle *h_ptr, NvDsMsgApiEventType ds_evt)
+{}
+
+void test_send_cb(void *user_ptr, NvDsMsgApiErrorType completion_flag)
+{
+}
+
+
 static char *
 ngx_live_record_merge_app_conf(ngx_conf_t *cf, void *parent, void *child)
 {
@@ -176,7 +187,6 @@ ngx_live_record_merge_app_conf(ngx_conf_t *cf, void *parent, void *child)
                 ngx_create_dir_n " \"%s\" failed", path);
         return NGX_CONF_ERROR;
     }
-
     return NGX_CONF_OK;
 }
 
@@ -250,7 +260,7 @@ ngx_live_record_open_file(ngx_rtmp_session_t *s)
 
     len = lracf->path.len + sizeof("/") - 1 + s->serverid.len + sizeof("/") - 1
         + s->app.len + sizeof("/") - 1 + s->name.len + sizeof("/") - 1
-        + sizeof("YYYYMMDD/") - 1 + s->name.len
+        + sizeof("YYYYMMDD/ts/") - 1 + s->name.len
         + NGX_OFF_T_LEN + sizeof("_.ts") - 1;
 
     if (ctx->file.name.len == 0) { // first create in current session
@@ -266,7 +276,7 @@ ngx_live_record_open_file(ngx_rtmp_session_t *s)
     ngx_libc_localtime(ctx->last_time, &tm);
 
     p = ngx_snprintf(ctx->file.name.data, len,
-            "%V/%V/%V/%V/%04d%02d%02d/%V_%d.ts",
+            "%V/%V/%V/%V/%04d%02d%02d/ts/%V_%d.ts",
             &lracf->path, &s->serverid, &s->app, &s->name,
             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
             &s->name, ctx->last_time);
@@ -345,10 +355,14 @@ ngx_live_record_write_index(ngx_rtmp_session_t *s, ngx_live_record_ctx_t *ctx,
 
     ctx->endsize = ctx->ts.file_size - 1;
 
+    // p = ngx_snprintf(buf, sizeof(buf) - 1,
+    //         "%V-%D.ts?startsize=%O&endsize=%O&starttime=%M&endtime=%M\n",
+    //         &s->name, ctx->last_time, ctx->startsize, ctx->endsize,
+    //         ctx->starttime, ctx->endtime);
     p = ngx_snprintf(buf, sizeof(buf) - 1,
-            "%V-%D.ts?startsize=%O&endsize=%O&starttime=%M&endtime=%M\n",
-            &s->name, ctx->last_time, ctx->startsize, ctx->endsize,
-            ctx->starttime, ctx->endtime);
+            "#EXTINF:%.3f,\n#EXT-X-BYTERANGE:%O[@%O]\n../ts/%V_%D.ts\n",
+            (ctx->endtime - ctx->starttime + 1) / 1000.0, ctx->endsize - ctx->startsize + 1, ctx->startsize, &s->name,
+            ctx->last_time);
     *p = 0;
 
     if (ngx_write_fd(ctx->index.fd, buf, p - buf) < 0) {
@@ -377,7 +391,7 @@ ngx_live_record_open_index(ngx_rtmp_session_t *s)
 
     len = lracf->path.len + sizeof("/") - 1 + s->serverid.len + sizeof("/") - 1
         + s->app.len + sizeof("/") - 1 + s->name.len + sizeof("/") - 1
-        + sizeof("index/YYYYMMDD/") - 1 + s->name.len
+        + sizeof("YYYYMMDD/index/") - 1 + s->name.len
         + NGX_OFF_T_LEN + sizeof("-.m3u8") - 1;
 
     if (ctx->index.name.len == 0) { // first create in current session
@@ -393,7 +407,7 @@ ngx_live_record_open_index(ngx_rtmp_session_t *s)
     ngx_libc_localtime(ctx->last_time, &tm);
 
     p = ngx_snprintf(ctx->index.name.data, len,
-            "%V/%V/%V/%V/index/%04d%02d%02d/%V-%D.m3u8",
+            "%V/%V/%V/%V/%04d%02d%02d/index/%V-%D.m3u8",
             &lracf->path, &s->serverid, &s->app, &s->name,
             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
             &s->name, ctx->last_time);
@@ -425,6 +439,15 @@ ngx_live_record_open_index(ngx_rtmp_session_t *s)
         return NGX_OK;
     }
 
+    u_char                         *p_start, buf[1024];
+    p_start = ngx_snprintf(buf, sizeof(buf) - 1,
+            "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-MEDIA-SEQUENCE:1\n#EXT-X-TARGETDURATION:%D\n", lracf->max_fraglen / 1000);
+    *p_start = 0;
+
+    if (ngx_write_fd(ctx->index.fd, buf, p_start - buf) < 0) {
+        ngx_log_error(NGX_LOG_ERR, s->log, ngx_errno,
+                "record, write %V failed: %s", &ctx->index.name, buf);
+    }
     return ngx_live_record_open_file(s);
 }
 
@@ -438,11 +461,38 @@ ngx_live_record_close_index(ngx_rtmp_session_t *s, ngx_live_record_ctx_t *ctx)
 
     ngx_live_record_write_index(s, ctx, 0);
 
+    u_char                         *p, buf[1024];
+    p = ngx_snprintf(buf, sizeof(buf) - 1,
+            "#EXT-X-ENDLIST\n");
+    *p = 0;
+
+    if (ngx_write_fd(ctx->index.fd, buf, p - buf) < 0) {
+        ngx_log_error(NGX_LOG_ERR, s->log, ngx_errno,
+                "record, write %V failed: %s", &ctx->index.name, buf);
+    }
+
     ngx_close_file(ctx->file.fd);
     ctx->file.fd = -1;
 
     ngx_close_file(ctx->index.fd);
     ctx->index.fd = -1;
+
+    u_char                         *kafka_p, kafka_buf[1024];
+    // kafka_p = ngx_snprintf(kafka_buf, sizeof(kafka_buf) - 1,
+    //             "{\n \"stream\" : %V\n \"starttime\" : %D000\n \"endtime\" : %M\n \"url\" : %V\n}\n",
+    //             &s->name, ctx->last_time, ctx->endtime, &ctx->index.name);
+    kafka_p = ngx_snprintf(kafka_buf, sizeof(kafka_buf) - 1,
+                "{\"stream\":\"%V\",\"starttime\":%D,\"endtime\":%D,\"url\":\"%V\"}",
+                &s->name, ctx->last_time, ctx->endtime / 1000, &ctx->index.name);
+    NvDsMsgApiHandle conn_handle;
+    conn_handle = nvds_msgapi_connect((char *)"172.17.0.1;9092;video-segment",(nvds_msgapi_connect_cb_t) sample_msgapi_connect_cb, NULL);
+    if (conn_handle && nvds_msgapi_send_async(conn_handle, (char *)"video-segment", (const uint8_t*) kafka_buf, kafka_p - kafka_buf, test_send_cb, NULL) != NVDS_MSGAPI_OK) {
+        ngx_log_error(NGX_LOG_ERR, s->log, ngx_errno, "send %V-%D failed", &s->name, ctx->last_time);
+    }   
+    else{
+        ngx_log_error(NGX_LOG_INFO, s->log, ngx_errno, "send %V-%D success", &s->name, ctx->last_time);
+    }
+    nvds_msgapi_disconnect(conn_handle);
 }
 
 
@@ -751,13 +801,13 @@ ngx_live_record_aac(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
     lracf = ngx_rtmp_get_module_app_conf(s, ngx_live_record_module);
 
     if (ctx->last_time == 0) {
-        ctx->publish_epoch = ngx_current_msec;
+        ctx->publish_epoch = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
         ctx->last_time = ngx_time() - ngx_time() % (lracf->interval / 1000);
         ctx->basetime = ctx->publish_epoch - h->timestamp;
 
-        ctx->begintime = ngx_current_msec;
-        ctx->starttime = ngx_current_msec;
-        ctx->endtime = ngx_current_msec;
+        ctx->begintime = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
+        ctx->starttime = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
+        ctx->endtime = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
 
         // open new index and file
         if (ngx_live_record_open_index(s) == NGX_ERROR) {
@@ -914,13 +964,13 @@ ngx_live_record_avc(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
     lracf = ngx_rtmp_get_module_app_conf(s, ngx_live_record_module);
 
     if (ctx->last_time == 0) {
-        ctx->publish_epoch = ngx_current_msec;
+        ctx->publish_epoch = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
         ctx->last_time = ngx_time() - ngx_time() % (lracf->interval / 1000);
         ctx->basetime = ctx->publish_epoch - h->timestamp;
 
-        ctx->begintime = ngx_current_msec;
-        ctx->starttime = ngx_current_msec;
-        ctx->endtime = ngx_current_msec;
+        ctx->begintime = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
+        ctx->starttime = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
+        ctx->endtime = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
 
         // open new index and file
         if (ngx_live_record_open_index(s) == NGX_ERROR) {

@@ -179,6 +179,7 @@ then
         apt-get install -y zlib1g-dev
         apt-get install -y openssl
         apt-get install -y libssl-dev
+	apt-get install -y libglib2.0 libglib2.0-dev
 
     elif [ "$CMD" == "brew" ]
     then
