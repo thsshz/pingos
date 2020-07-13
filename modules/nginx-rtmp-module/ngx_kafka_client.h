@@ -19,6 +19,9 @@
 #define _NGX_KAFKA_CLIENT_H_INCLUDE_
 
 #include <stdint.h>
+#include <ngx_config.h>
+#include <ngx_core.h>
+#include "ngx_rtmp.h"
 
 /**
  * Defines the handle to be used with all methods in the NvDS_MsgApi interface
@@ -73,7 +76,7 @@ typedef void (*nvds_msgapi_connect_cb_t)(NvDsMsgApiHandle h_ptr, NvDsMsgApiEvent
   *
   * @return A connection handle.
  */
-NvDsMsgApiHandle nvds_msgapi_connect(char *connection_str, nvds_msgapi_connect_cb_t connect_cb, char *config_path);
+NvDsMsgApiHandle nvds_msgapi_connect(char* brokerurl, char* btopic, nvds_msgapi_connect_cb_t connect_cb, char *config_path);
 
  /**
   * Send message over connection synchronously based on blocking semantics
@@ -99,7 +102,7 @@ NvDsMsgApiErrorType nvds_msgapi_send(NvDsMsgApiHandle h_ptr, char *topic, const 
   *
   * @return Completion status of send operation
  */
-NvDsMsgApiErrorType nvds_msgapi_send_async(NvDsMsgApiHandle h_ptr, char  *topic, const uint8_t *payload, size_t nbuf, nvds_msgapi_send_cb_t send_callback, void *user_ptr);
+NvDsMsgApiErrorType nvds_msgapi_send_async(NvDsMsgApiHandle h_ptr, const uint8_t *payload, size_t nbuf, nvds_msgapi_send_cb_t send_callback, void *user_ptr);
 
 /**
  * Calls into the adapter to allow for execution of undnerlying protocol logic.

@@ -261,7 +261,12 @@ ngx_live_record_open_file(ngx_rtmp_session_t *s)
     len = lracf->path.len + sizeof("/") - 1 + s->serverid.len + sizeof("/") - 1
         + s->app.len + sizeof("/") - 1 + s->name.len + sizeof("/") - 1
         + sizeof("YYYYMMDD/ts/") - 1 + s->name.len
-        + NGX_OFF_T_LEN + sizeof("_.ts") - 1;
+        + 13 + sizeof("_.ts") - 1;
+
+    // len = lracf->path.len + sizeof("/") - 1 + s->serverid.len + sizeof("/") - 1
+    //     + s->app.len + sizeof("/") - 1 + s->name.len + sizeof("/") - 1
+    //     + sizeof("YYYYMMDD/ts/") - 1 + s->name.len
+    //     + sizeof("__07_01_2020_05_12_12_000_AM_UTC-08_00.ts") - 1;
 
     if (ctx->file.name.len == 0) { // first create in current session
         ctx->file.name.data = ngx_pcalloc(s->pool, len + 1);
@@ -273,13 +278,36 @@ ngx_live_record_open_file(ngx_rtmp_session_t *s)
     }
 
     // fill file name
-    ngx_libc_localtime(ctx->last_time, &tm);
-
+    //ngx_libc_localtime(ctx->begintime / 1000, &tm);
+    ngx_libc_gmtime(ctx->begintime / 1000, &tm);
+    //ngx_libc_gmtime()
     p = ngx_snprintf(ctx->file.name.data, len,
-            "%V/%V/%V/%V/%04d%02d%02d/ts/%V_%d.ts",
+            "%V/%V/%V/%V/%04d%02d%02d/ts/%V_%M.ts",
             &lracf->path, &s->serverid, &s->app, &s->name,
             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-            &s->name, ctx->last_time);
+            &s->name, ctx->begintime);
+
+    //VideoFileSavedFromCamera__4_11_2018_4_59_59_433_AM_UTC-07_00.mp4
+    // ngx_uint_t am_pm_hour;
+    // if (tm.tm_hour >= 12){
+    //     am_pm_hour = tm.tm_hour - 12;
+    //     if(am_pm_hour == 0)
+    //         am_pm_hour = 12;
+    //     p = ngx_snprintf(ctx->file.name.data, len,
+    //             "%V/%V/%V/%V/%04d%02d%02d/ts/%V__%02d_%02d_%04d_%02d_%02d_%02d_%03d_PM_UTC-00_00.ts",
+    //             &lracf->path, &s->serverid, &s->app, &s->name,
+    //             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+    //             &s->name, tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, am_pm_hour, tm.tm_min, tm.tm_sec, ctx->begintime % 1000);
+    // } else {
+    //     am_pm_hour = tm.tm_hour;
+    //     if(am_pm_hour == 0)
+    //         am_pm_hour = 12;
+    //     p = ngx_snprintf(ctx->file.name.data, len,
+    //             "%V/%V/%V/%V/%04d%02d%02d/ts/%V__%02d_%02d_%04d_%02d_%02d_%02d_%03d_AM_UTC-00_00.ts",
+    //             &lracf->path, &s->serverid, &s->app, &s->name,
+    //             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+    //             &s->name, tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, am_pm_hour, tm.tm_min, tm.tm_sec, ctx->begintime % 1000);
+    // }
     *p = 0;
     ctx->file.name.len = p - ctx->file.name.data;
 
@@ -360,15 +388,15 @@ ngx_live_record_write_index(ngx_rtmp_session_t *s, ngx_live_record_ctx_t *ctx,
     //         &s->name, ctx->last_time, ctx->startsize, ctx->endsize,
     //         ctx->starttime, ctx->endtime);
     p = ngx_snprintf(buf, sizeof(buf) - 1,
-            "#EXTINF:%.3f,\n#EXT-X-BYTERANGE:%O[@%O]\n../ts/%V_%D.ts\n",
-            (ctx->endtime - ctx->starttime + 1) / 1000.0, ctx->endsize - ctx->startsize + 1, ctx->startsize, &s->name,
-            ctx->last_time);
+            "#EXTINF:%.3f,\n#EXT-X-BYTERANGE:%O[@%O]\n../ts/%V_%M.ts\n",
+            (ctx->endtime - ctx->starttime) / 1000.0, ctx->endsize - ctx->startsize, ctx->startsize, &s->name,
+            ctx->begintime);
     *p = 0;
 
-    if (ngx_write_fd(ctx->index.fd, buf, p - buf) < 0) {
-        ngx_log_error(NGX_LOG_ERR, s->log, ngx_errno,
-                "record, write %V failed: %s", &ctx->index.name, buf);
-    }
+    // if (ngx_write_fd(ctx->index.fd, buf, p - buf) < 0) {
+    //     ngx_log_error(NGX_LOG_ERR, s->log, ngx_errno,
+    //             "record, write %V failed: %s", &ctx->index.name, buf);
+    // }
 
     ctx->startsize = ctx->ts.file_size;
     ctx->starttime = curr_time;
@@ -392,7 +420,7 @@ ngx_live_record_open_index(ngx_rtmp_session_t *s)
     len = lracf->path.len + sizeof("/") - 1 + s->serverid.len + sizeof("/") - 1
         + s->app.len + sizeof("/") - 1 + s->name.len + sizeof("/") - 1
         + sizeof("YYYYMMDD/index/") - 1 + s->name.len
-        + NGX_OFF_T_LEN + sizeof("-.m3u8") - 1;
+        + 13 + sizeof("_.m3u8") - 1;
 
     if (ctx->index.name.len == 0) { // first create in current session
         ctx->index.name.data = ngx_pcalloc(s->pool, len + 1);
@@ -407,10 +435,10 @@ ngx_live_record_open_index(ngx_rtmp_session_t *s)
     ngx_libc_localtime(ctx->last_time, &tm);
 
     p = ngx_snprintf(ctx->index.name.data, len,
-            "%V/%V/%V/%V/%04d%02d%02d/index/%V-%D.m3u8",
+            "%V/%V/%V/%V/%04d%02d%02d/index/%V_%M.m3u8",
             &lracf->path, &s->serverid, &s->app, &s->name,
             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-            &s->name, ctx->last_time);
+            &s->name, ctx->begintime);
     *p = 0;
     ctx->index.name.len = p - ctx->index.name.data;
 
@@ -459,6 +487,28 @@ ngx_live_record_close_index(ngx_rtmp_session_t *s, ngx_live_record_ctx_t *ctx)
         return;
     }
 
+    ngx_msec_t ctx_endtime, ctx_begintime;
+    ctx_endtime = ctx->endtime;
+    ctx_begintime = ctx->begintime;
+    ngx_log_t s_log;
+    s_log = *(s->log);
+    ngx_str_t s_name, s_serverid, s_app, ctx_index_name;
+    s_name = s->name;
+    s_serverid = s->serverid;
+    s_app = s->app;
+    ctx_index_name = ctx->index.name;
+    u_char                         *ts_p, ts_buf[1024];
+
+    ts_p = ngx_snprintf(ts_buf, sizeof(ts_buf) - 1,
+            "#EXTINF:%.3f,\n../ts/%V_%M.ts\n",
+            (ctx_endtime - ctx_begintime) / 1000.0, &s_name,
+            ctx_begintime);
+    *ts_p = 0;
+    if (ngx_write_fd(ctx->index.fd, ts_buf, ts_p - ts_buf) < 0) {
+        ngx_log_error(NGX_LOG_ERR, &s_log, ngx_errno,
+                "record, write %V failed: %s", &ctx_index_name, ts_buf);
+    }
+
     ngx_live_record_write_index(s, ctx, 0);
 
     u_char                         *p, buf[1024];
@@ -467,8 +517,8 @@ ngx_live_record_close_index(ngx_rtmp_session_t *s, ngx_live_record_ctx_t *ctx)
     *p = 0;
 
     if (ngx_write_fd(ctx->index.fd, buf, p - buf) < 0) {
-        ngx_log_error(NGX_LOG_ERR, s->log, ngx_errno,
-                "record, write %V failed: %s", &ctx->index.name, buf);
+        ngx_log_error(NGX_LOG_ERR, &s_log, ngx_errno,
+                "record, write %V failed: %s", &ctx_index_name, buf);
     }
 
     ngx_close_file(ctx->file.fd);
@@ -481,18 +531,85 @@ ngx_live_record_close_index(ngx_rtmp_session_t *s, ngx_live_record_ctx_t *ctx)
     // kafka_p = ngx_snprintf(kafka_buf, sizeof(kafka_buf) - 1,
     //             "{\n \"stream\" : %V\n \"starttime\" : %D000\n \"endtime\" : %M\n \"url\" : %V\n}\n",
     //             &s->name, ctx->last_time, ctx->endtime, &ctx->index.name);
+    // kafka_p = ngx_snprintf(kafka_buf, sizeof(kafka_buf) - 1,
+    //             "{\"stream\":\"%V\",\"starttime\":%.3f,\"endtime\":%.3f,\"url\":\"%V\"}",
+    //             &s->name, (double)ctx->begintime / 1000.0, (double)ctx->endtime / 1000.0, &ctx->index.name);
+    
+    struct tm                       begin_tm;
+    struct tm                       end_tm;
+    ngx_libc_gmtime(ctx_begintime / 1000, &begin_tm);
+    ngx_libc_gmtime(ctx_endtime / 1000, &end_tm);
+
     kafka_p = ngx_snprintf(kafka_buf, sizeof(kafka_buf) - 1,
-                "{\"stream\":\"%V\",\"starttime\":%D,\"endtime\":%D,\"url\":\"%V\"}",
-                &s->name, ctx->last_time, ctx->endtime / 1000, &ctx->index.name);
+                "{\"stream\":\"%V\",\"starttime\":\"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ\",\"endtime\":\"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ\",\"url\":\"%V\"}",
+                &s_name, begin_tm.tm_year + 1900, begin_tm.tm_mon + 1, begin_tm.tm_mday,
+                begin_tm.tm_hour, begin_tm.tm_min, begin_tm.tm_sec, ctx_begintime % 1000, 
+                end_tm.tm_year + 1900, end_tm.tm_mon + 1, end_tm.tm_mday, 
+                end_tm.tm_hour, end_tm.tm_min, end_tm.tm_sec, ctx_endtime % 1000, &ctx_index_name);
+
     NvDsMsgApiHandle conn_handle;
-    conn_handle = nvds_msgapi_connect((char *)"172.17.0.1;9092;video-segment",(nvds_msgapi_connect_cb_t) sample_msgapi_connect_cb, NULL);
-    if (conn_handle && nvds_msgapi_send_async(conn_handle, (char *)"video-segment", (const uint8_t*) kafka_buf, kafka_p - kafka_buf, test_send_cb, NULL) != NVDS_MSGAPI_OK) {
-        ngx_log_error(NGX_LOG_ERR, s->log, ngx_errno, "send %V-%D failed", &s->name, ctx->last_time);
-    }   
-    else{
-        ngx_log_error(NGX_LOG_INFO, s->log, ngx_errno, "send %V-%D success", &s->name, ctx->last_time);
+    conn_handle = nvds_msgapi_connect("kafka:9092", "video-segment", (nvds_msgapi_connect_cb_t) sample_msgapi_connect_cb, NULL);
+    if (conn_handle){
+        if (nvds_msgapi_send_async(conn_handle, (const uint8_t*) kafka_buf, kafka_p - kafka_buf, test_send_cb, NULL) != NVDS_MSGAPI_OK) {
+            ngx_log_error(NGX_LOG_ERR, &s_log, ngx_errno, "send %V-%M failed", &s_name, ctx_begintime);
+        }   
+        else{
+            ngx_log_error(NGX_LOG_INFO, &s_log, ngx_errno, "send %V-%M success", &s_name, ctx_begintime);
+        }
+        nvds_msgapi_disconnect(conn_handle);
     }
-    nvds_msgapi_disconnect(conn_handle);
+    else{
+        ngx_log_error(NGX_LOG_ERR, &s_log, ngx_errno, "send %V-%M failed NULL", &s_name, ctx_begintime);
+    }
+    
+    u_char                         *ts_kafka_p, ts_kafka_buf[1024];
+    struct tm                       tm;
+    ngx_live_record_app_conf_t     *lracf;
+
+    lracf = ngx_rtmp_get_module_app_conf(s, ngx_live_record_module);
+    ngx_libc_gmtime(ctx_begintime / 1000, &tm);
+    ngx_uint_t am_pm_hour;
+    if (tm.tm_hour >= 12){
+        am_pm_hour = tm.tm_hour - 12;
+        if(am_pm_hour == 0)
+            am_pm_hour = 12;
+        ts_kafka_p = ngx_snprintf(ts_kafka_buf, sizeof(ts_kafka_buf) - 1,
+                "{\"stream\":\"%V\",\"ts_name\":\"%V/%V/%V/%V/%04d%02d%02d/ts/%V_%M.ts\",\"mp4_name\":\"%V/%V/%V/%V/%04d%02d%02d/ts/%V__%02d_%02d_%04d_%02d_%02d_%02d_%03d_PM_UTC-00_00.mp4\"}",
+                &s_name, &lracf->path, &s_serverid, &s_app, &s_name,
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                &s_name, ctx_begintime,
+                &lracf->path, &s_serverid, &s_app, &s_name,
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                &s_name, tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, 
+                am_pm_hour, tm.tm_min, tm.tm_sec, ctx_begintime % 1000);
+    } else {
+        am_pm_hour = tm.tm_hour;
+        if(am_pm_hour == 0)
+            am_pm_hour = 12;
+       ts_kafka_p = ngx_snprintf(ts_kafka_buf, sizeof(ts_kafka_buf) - 1,
+                "{\"stream\":\"%V\",\"ts_name\":\"%V/%V/%V/%V/%04d%02d%02d/ts/%V_%M.ts\",\"mp4_name\":\"%V/%V/%V/%V/%04d%02d%02d/ts/%V__%02d_%02d_%04d_%02d_%02d_%02d_%03d_AM_UTC-00_00.mp4\"}",
+                &s_name, &lracf->path, &s_serverid, &s_app, &s_name,
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                &s_name, ctx_begintime,
+                &lracf->path, &s_serverid, &s_app, &s_name,
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                &s_name, tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, 
+                am_pm_hour, tm.tm_min, tm.tm_sec, ctx_begintime % 1000);
+    }
+    NvDsMsgApiHandle ts_conn_handle;
+    ts_conn_handle = nvds_msgapi_connect("kafka:9092", "ts-segment", (nvds_msgapi_connect_cb_t) sample_msgapi_connect_cb, NULL);
+    if (ts_conn_handle){
+        if (nvds_msgapi_send_async(ts_conn_handle, (const uint8_t*) ts_kafka_buf, ts_kafka_p - ts_kafka_buf, test_send_cb, NULL) != NVDS_MSGAPI_OK) {
+            ngx_log_error(NGX_LOG_ERR, &s_log, ngx_errno, "send %V-%M ts-segment failed", &s_name, ctx_begintime);
+        }   
+        else{
+            ngx_log_error(NGX_LOG_INFO, &s_log, ngx_errno, "send %V-%M ts-segment success", &s_name, ctx_begintime);
+        }
+        nvds_msgapi_disconnect(ts_conn_handle);
+    }
+    else{
+        ngx_log_error(NGX_LOG_ERR, &s_log, ngx_errno, "send %V-%M ts-segment failed NULL", &s_name, ctx_begintime);
+    }
 }
 
 
