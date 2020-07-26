@@ -432,7 +432,8 @@ ngx_live_record_open_index(ngx_rtmp_session_t *s)
     }
 
     // fill index and file name
-    ngx_libc_localtime(ctx->last_time, &tm);
+    // ngx_libc_localtime(ctx->last_time, &tm);
+    ngx_libc_gmtime(ctx->begintime / 1000, &tm);
 
     p = ngx_snprintf(ctx->index.name.data, len,
             "%V/%V/%V/%V/%04d%02d%02d/index/%V_%M.m3u8",
@@ -916,7 +917,6 @@ ngx_live_record_aac(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
     }
 
     lracf = ngx_rtmp_get_module_app_conf(s, ngx_live_record_module);
-
     if (ctx->last_time == 0) {
         ctx->publish_epoch = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
         ctx->last_time = ngx_time() - ngx_time() % (lracf->interval / 1000);
@@ -1001,6 +1001,7 @@ ngx_live_record_aac(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
         last_time = curr_time / 1000 - (curr_time / 1000)
                                      % (lracf->interval / 1000);
         if (curr_time > ctx->starttime + lracf->min_fraglen) {
+            // ngx_live_record_reopen_index(s, ctx, curr_time, last_time);
             if (last_time > ctx->last_time) {
                 ngx_live_record_reopen_index(s, ctx, curr_time, last_time);
             } else {
@@ -1079,7 +1080,6 @@ ngx_live_record_avc(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
     }
 
     lracf = ngx_rtmp_get_module_app_conf(s, ngx_live_record_module);
-
     if (ctx->last_time == 0) {
         ctx->publish_epoch = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
         ctx->last_time = ngx_time() - ngx_time() % (lracf->interval / 1000);
@@ -1232,6 +1232,7 @@ ngx_live_record_avc(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
                                  % (lracf->interval / 1000);
     if (ftype == 1) { // key frame
         if (curr_time > ctx->starttime + lracf->min_fraglen) {
+            // ngx_live_record_reopen_index(s, ctx, curr_time, last_time);
             if (last_time > ctx->last_time) {
                 ngx_live_record_reopen_index(s, ctx, curr_time, last_time);
             } else {
@@ -1239,6 +1240,11 @@ ngx_live_record_avc(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
             }
         }
     } else if (curr_time > ctx->starttime + lracf->max_fraglen) { // force slice
+        // ngx_log_error(NGX_LOG_INFO, s->log, 0, "record: force slice, "
+        //             "curr_time:%M, starttime:%M, max_fraglen:%M",
+        //             curr_time, ctx->starttime, lracf->max_fraglen);
+
+        // ngx_live_record_reopen_index(s, ctx, curr_time, last_time);
         if (last_time > ctx->last_time) {
             ngx_log_error(NGX_LOG_INFO, s->log, 0, "record: force slice, "
                     "curr_time:%M, starttime:%M, max_fraglen:%M",
