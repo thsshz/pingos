@@ -541,12 +541,20 @@ ngx_live_record_close_index(ngx_rtmp_session_t *s, ngx_live_record_ctx_t *ctx)
     ngx_libc_gmtime(ctx_begintime / 1000, &begin_tm);
     ngx_libc_gmtime(ctx_endtime / 1000, &end_tm);
 
+    struct tm                       tm;
+    ngx_live_record_app_conf_t     *lracf;
+
+    lracf = ngx_rtmp_get_module_app_conf(s, ngx_live_record_module);
+    ngx_libc_gmtime(ctx_begintime / 1000, &tm);
+
     kafka_p = ngx_snprintf(kafka_buf, sizeof(kafka_buf) - 1,
-                "{\"stream\":\"%V\",\"starttime\":\"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ\",\"endtime\":\"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ\",\"url\":\"%V\"}",
+                "{\"stream\":\"%V\",\"starttime\":\"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ\",\"endtime\":\"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ\",\"url\":\"%V\",\"ts_url\":\"%V/%V/%V/%V/%04d%02d%02d/ts/%V_%M.ts\"}",
                 &s_name, begin_tm.tm_year + 1900, begin_tm.tm_mon + 1, begin_tm.tm_mday,
                 begin_tm.tm_hour, begin_tm.tm_min, begin_tm.tm_sec, ctx_begintime % 1000, 
                 end_tm.tm_year + 1900, end_tm.tm_mon + 1, end_tm.tm_mday, 
-                end_tm.tm_hour, end_tm.tm_min, end_tm.tm_sec, ctx_endtime % 1000, &ctx_index_name);
+                end_tm.tm_hour, end_tm.tm_min, end_tm.tm_sec, ctx_endtime % 1000, &ctx_index_name, &lracf->path, &s_serverid, &s_app, &s_name,
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                &s_name, ctx_begintime);
 
     NvDsMsgApiHandle conn_handle;
     conn_handle = nvds_msgapi_connect("kafka:9092", "video-segment", (nvds_msgapi_connect_cb_t) sample_msgapi_connect_cb, NULL);
@@ -564,11 +572,6 @@ ngx_live_record_close_index(ngx_rtmp_session_t *s, ngx_live_record_ctx_t *ctx)
     }
     
     u_char                         *ts_kafka_p, ts_kafka_buf[1024];
-    struct tm                       tm;
-    ngx_live_record_app_conf_t     *lracf;
-
-    lracf = ngx_rtmp_get_module_app_conf(s, ngx_live_record_module);
-    ngx_libc_gmtime(ctx_begintime / 1000, &tm);
     ngx_uint_t am_pm_hour;
     if (tm.tm_hour >= 12){
         am_pm_hour = tm.tm_hour - 12;
